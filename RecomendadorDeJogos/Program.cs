@@ -1,74 +1,57 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Text.Json;
 
 namespace RecomendadorDeJogos
 {
-    // 1. A classe Jogo evoluiu. Adeus 'Tags' genéricas, olá Categorias!
     public class Jogo
     {
-        public string Nome { get; set; }
-        public List<string> Generos { get; set; }
-        public List<string> Temas { get; set; }
-        public List<string> EstilosVisuais { get; set; }
-
-        public Jogo(string nome, List<string> generos, List<string> temas, List<string> estilosVisuais)
-        {
-            Nome = nome;
-            Generos = generos;
-            Temas = temas;
-            EstilosVisuais = estilosVisuais;
-        }
+        // RESOLVENDO O AVISO CS8618: 
+        // Já deixamos o Nome como texto vazio e as listas como novas listas vazias desde o nascimento da classe.
+        // Assim, eles nunca serão 'null'.
+        public string Nome { get; set; } = string.Empty;
+        public int Ano { get; set; }
+        public List<string> Generos { get; set; } = new List<string>();
+        public List<string> Temas { get; set; } = new List<string>();
+        public List<string> EstilosVisuais { get; set; } = new List<string>();
     }
 
     class Program
     {
         static void Main(string[] args)
         {
-            // 2. Nosso Banco de Dados agora é muito mais detalhado
-            List<Jogo> bancoDeJogos = new List<Jogo>
+            Console.WriteLine("=== INICIANDO SISTEMA ===");
+            List<Jogo> bancoDeJogos = new List<Jogo>();
+
+            try
             {
-                new Jogo("The Witcher 3", 
-                    new List<string> { "RPG", "Ação" }, 
-                    new List<string> { "Mundo Aberto", "Fantasia", "História" }, 
-                    new List<string> { "3D", "Realista" }),
-                    
-                new Jogo("Skyrim", 
-                    new List<string> { "RPG", "Ação" }, 
-                    new List<string> { "Mundo Aberto", "Fantasia", "Mods" }, 
-                    new List<string> { "3D", "Realista" }),
-                    
-                new Jogo("Hollow Knight", 
-                    new List<string> { "Metroidvania", "Plataforma" }, 
-                    new List<string> { "Exploração", "Difícil" }, 
-                    new List<string> { "2D", "Desenhado à Mão" }),
-                    
-                new Jogo("Dark Souls", 
-                    new List<string> { "RPG", "Ação" }, 
-                    new List<string> { "Fantasia Escura", "Difícil" }, 
-                    new List<string> { "3D", "Realista" }),
-                    
-                new Jogo("Stardew Valley", 
-                    new List<string> { "Simulação", "RPG" }, 
-                    new List<string> { "Fazenda", "Relaxante" }, 
-                    new List<string> { "2D", "Pixel Art" }),
-                    
-                new Jogo("Celeste", 
-                    new List<string> { "Plataforma" }, 
-                    new List<string> { "História", "Difícil" }, 
-                    new List<string> { "2D", "Pixel Art" })
-            };
+                Console.WriteLine("Carregando banco de dados...");
+                string jsonString = File.ReadAllText("gamelist.json");
+                
+                // RESOLVENDO O AVISO DO JSON (CS8600):
+                // O '?? new List<Jogo>()' significa: "Se a desserialização retornar null, crie uma lista vazia no lugar".
+                bancoDeJogos = JsonSerializer.Deserialize<List<Jogo>>(jsonString) ?? new List<Jogo>();
+                
+                Console.WriteLine($"Sucesso! {bancoDeJogos.Count} jogos carregados na memória.\n");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Erro fatal ao carregar o banco de dados: {ex.Message}");
+                return; 
+            }
 
-            Console.WriteLine("=== BEM-VINDO AO RECOMENDADOR DE JOGOS V2 ===");
-            Console.WriteLine("Digite de 1 a 5 jogos para basearmos sua recomendação.");
-            Console.WriteLine("Deixe em branco e aperte Enter para finalizar.\n");
-
+            Console.WriteLine("=== BEM-VINDO AO RECOMENDADOR DE JOGOS V6 (Blindado) ===");
             List<Jogo> jogosEscolhidos = new List<Jogo>();
 
             while (jogosEscolhidos.Count < 5)
             {
-                Console.Write($"Jogo {jogosEscolhidos.Count + 1}/5: ");
-                string inputUsuario = Console.ReadLine();
+                Console.Write($"Jogo {jogosEscolhidos.Count + 1}/5 (ou Enter para pular): ");
+                
+                // RESOLVENDO O AVISO DO READLINE (CS8600):
+                // O '?? string.Empty' garante que, se der algum tilt e vier null, vira um texto vazio comum.
+                string inputUsuario = Console.ReadLine() ?? string.Empty;
 
                 if (string.IsNullOrWhiteSpace(inputUsuario))
                 {
@@ -77,40 +60,66 @@ namespace RecomendadorDeJogos
                     continue;
                 }
 
-                Jogo jogoEncontrado = bancoDeJogos.FirstOrDefault(j => j.Nome.Equals(inputUsuario, StringComparison.OrdinalIgnoreCase));
+                // Colocamos um '?' no tipo 'Jogo' para avisar o C# que sabemos que pode não achar o jogo (retornar nulo).
+                Jogo? jogoEncontrado = bancoDeJogos.FirstOrDefault(j => j.Nome.Equals(inputUsuario, StringComparison.OrdinalIgnoreCase));
 
                 if (jogoEncontrado != null)
                 {
                     if (!jogosEscolhidos.Contains(jogoEncontrado))
                     {
                         jogosEscolhidos.Add(jogoEncontrado);
-                        Console.WriteLine($"[+] '{jogoEncontrado.Nome}' adicionado!");
+                        Console.WriteLine($"[+] '{jogoEncontrado.Nome}' ({jogoEncontrado.Ano}) adicionado!");
                     }
                     else Console.WriteLine("Você já adicionou esse jogo!");
                 }
-                else Console.WriteLine("[-] Jogo não encontrado. Tente: The Witcher 3, Skyrim, Hollow Knight, Dark Souls, Stardew Valley, Celeste.");
+                else Console.WriteLine("[-] Jogo não encontrado no JSON.");
             }
+
+            Console.WriteLine("\n=== FILTROS ===");
+            Console.WriteLine("1. Tem algum gênero que você NÃO quer ver? (Deixe em branco para pular)");
+            Console.Write("Gênero a excluir: ");
+            string generoExcluido = Console.ReadLine() ?? string.Empty;
+
+            Console.WriteLine("\n2. A partir de que ano você quer buscar? (Deixe em branco para ignorar)");
+            Console.Write("Ano Mínimo: ");
+            string inputAnoMin = Console.ReadLine() ?? string.Empty;
+            
+            Console.WriteLine("\n3. Até que ano você quer buscar? (Deixe em branco para ignorar)");
+            Console.Write("Ano Máximo: ");
+            string inputAnoMax = Console.ReadLine() ?? string.Empty;
 
             Console.WriteLine("\n=== CALCULANDO RECOMENDAÇÕES ===");
 
-            // 3. Extraindo os interesses separadamente por categoria
+            // Como as listas da classe Jogo já iniciam vazias lá em cima, não precisamos mais do '?? new List<string>()' aqui embaixo!
             List<string> generosInteresse = jogosEscolhidos.SelectMany(j => j.Generos).Distinct().ToList();
             List<string> temasInteresse = jogosEscolhidos.SelectMany(j => j.Temas).Distinct().ToList();
             List<string> estilosInteresse = jogosEscolhidos.SelectMany(j => j.EstilosVisuais).Distinct().ToList();
-
             List<string> nomesEscolhidos = jogosEscolhidos.Select(j => j.Nome).ToList();
 
-            // 4. O Novo Motor com Sistema de Pesos (Weights)
-            var recomendacoes = bancoDeJogos
-                .Where(j => !nomesEscolhidos.Contains(j.Nome)) 
+            var candidatos = bancoDeJogos.Where(j => !nomesEscolhidos.Contains(j.Nome));
+
+            if (!string.IsNullOrWhiteSpace(generoExcluido))
+            {
+                candidatos = candidatos.Where(j => !j.Generos.Any(g => g.Equals(generoExcluido, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            if (int.TryParse(inputAnoMin, out int anoMin))
+            {
+                candidatos = candidatos.Where(j => j.Ano >= anoMin);
+            }
+
+            if (int.TryParse(inputAnoMax, out int anoMax))
+            {
+                candidatos = candidatos.Where(j => j.Ano <= anoMax);
+            }
+
+            var recomendacoes = candidatos
                 .Select(candidato => 
                 {
-                    // Encontrando os matches de cada categoria
                     var matchGeneros = candidato.Generos.Where(g => generosInteresse.Contains(g)).ToList();
                     var matchTemas = candidato.Temas.Where(t => temasInteresse.Contains(t)).ToList();
                     var matchEstilos = candidato.EstilosVisuais.Where(e => estilosInteresse.Contains(e)).ToList();
 
-                    // Aplicando a Matemática dos Pesos: Gênero vale 3x, Tema 2x, Estilo 1x
                     int scoreTotal = (matchGeneros.Count * 3) + (matchTemas.Count * 2) + (matchEstilos.Count * 1);
 
                     return new
@@ -126,23 +135,19 @@ namespace RecomendadorDeJogos
                 .OrderByDescending(x => x.Pontos) 
                 .ToList();
 
-            // 5. Exibição Detalhada (A Explicabilidade)
             if (recomendacoes.Count == 0)
             {
-                Console.WriteLine("Não achamos nada compatível :(");
+                Console.WriteLine("Com esses filtros, não sobrou nenhum jogo no banco de dados :(");
             }
             else
             {
                 foreach (var rec in recomendacoes)
                 {
-                    Console.WriteLine($"\n> {rec.Item.Nome} (Match: {rec.Pontos} pontos)");
+                    Console.WriteLine($"\n> {rec.Item.Nome} ({rec.Item.Ano}) (Match: {rec.Pontos} pontos)");
                     
-                    if(rec.MatchesGen.Any()) 
-                        Console.WriteLine($"  [Gêneros em comum]: {string.Join(", ", rec.MatchesGen)}");
-                    if(rec.MatchesTema.Any()) 
-                        Console.WriteLine($"  [Temas em comum]: {string.Join(", ", rec.MatchesTema)}");
-                    if(rec.MatchesEst.Any()) 
-                        Console.WriteLine($"  [Estilo visual em comum]: {string.Join(", ", rec.MatchesEst)}");
+                    if(rec.MatchesGen.Any()) Console.WriteLine($"  [Gêneros em comum]: {string.Join(", ", rec.MatchesGen)}");
+                    if(rec.MatchesTema.Any()) Console.WriteLine($"  [Temas em comum]: {string.Join(", ", rec.MatchesTema)}");
+                    if(rec.MatchesEst.Any()) Console.WriteLine($"  [Estilo visual em comum]: {string.Join(", ", rec.MatchesEst)}");
                 }
             }
             
