@@ -14,8 +14,8 @@ namespace RecomendadorDeJogos
         private static readonly HttpClient carteiro = new HttpClient();
 
         // COLOQUE SUAS CHAVES AQUI
-        private readonly string clientId = "enov2qvpa3xxzib82yx9uonm0dk6jf";
-        private readonly string clientSecret = "qfb0wehulhc77hc85n9incw7oyywc2";
+        private readonly string clientId = "";
+        private readonly string clientSecret = "";
 
         // Função 1: Pegar o Crachá (Token) na Twitch
         private async Task<string> PegarTokenTwitch()
