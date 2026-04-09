@@ -7,8 +7,7 @@ namespace RecomendadorDeJogos
     public class RepositorioJogos
     {
         private static readonly HttpClient carteiro = new HttpClient();
-        
-        // As variáveis agora começam vazias
+        // COLOQUE SUAS CHAVES AQUI
         private readonly string clientId = string.Empty;
         private readonly string clientSecret = string.Empty;
         private string tokenAtual = string.Empty;
