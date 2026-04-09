@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -11,82 +13,104 @@ namespace RecomendadorDeJogos
     {
         private static readonly HttpClient carteiro = new HttpClient();
 
+        // COLOQUE SUAS CHAVES AQUI
+        private readonly string clientId = "enov2qvpa3xxzib82yx9uonm0dk6jf";
+        private readonly string clientSecret = "qfb0wehulhc77hc85n9incw7oyywc2";
+
+        // Função 1: Pegar o Crachá (Token) na Twitch
+        private async Task<string> PegarTokenTwitch()
+        {
+            Console.WriteLine("Pedindo autorização para a Twitch...");
+            
+            // Requisição POST para a Twitch
+            var request = new HttpRequestMessage(HttpMethod.Post, 
+                $"https://id.twitch.tv/oauth2/token?client_id={clientId}&client_secret={clientSecret}&grant_type=client_credentials");
+
+            var resposta = await carteiro.SendAsync(request);
+            resposta.EnsureSuccessStatusCode();
+
+            string jsonString = await resposta.Content.ReadAsStringAsync();
+            var tokenData = JsonSerializer.Deserialize<TwitchTokenDto>(jsonString);
+
+            return tokenData?.access_token ?? string.Empty;
+        }
+
+        // Função 2: A nossa função principal que o Program.cs vai chamar
         public async Task<List<Jogo>> CarregarJogosApi()
         {
-            string jsonString = string.Empty;
-
             try
             {
-                Console.WriteLine("Conectando aos servidores da RAWG API...");
-                
-                // Para a API real funcionar no futuro, você precisará criar uma conta lá e trocar essa chave
-                string urlRawg = "https://api.rawg.io/api/games?key=SUA_CHAVE_AQUI&page_size=50";
-                
-                HttpResponseMessage resposta = await carteiro.GetAsync(urlRawg);
-                resposta.EnsureSuccessStatusCode(); 
-                
-                jsonString = await resposta.Content.ReadAsStringAsync();
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("Aviso: Chave da API ausente ou internet caiu. Usando dados DTO simulados da RAWG...");
-                
-                // Nosso Plano B: Um JSON exatamente no formato da RAWG para testarmos nosso tradutor!
-                jsonString = @"{
-                  ""results"": [
-                    {
-                      ""name"": ""The Witcher 3: Wild Hunt"",
-                      ""released"": ""2015-05-18"",
-                      ""genres"": [{ ""name"": ""Action"" }, { ""name"": ""RPG"" }],
-                      ""tags"": [{ ""name"": ""Singleplayer"" }, { ""name"": ""Story Rich"" }, { ""name"": ""Open World"" }]
-                    },
-                    {
-                      ""name"": ""Hollow Knight"",
-                      ""released"": ""2017-02-24"",
-                      ""genres"": [{ ""name"": ""Action"" }, { ""name"": ""Indie"" }, { ""name"": ""Platformer"" }],
-                      ""tags"": [{ ""name"": ""Metroidvania"" }, { ""name"": ""Difficult"" }, { ""name"": ""2D"" }]
-                    }
-                  ]
-                }";
-            }
+                // 1. Pegamos o token
+                string token = await PegarTokenTwitch();
 
-            // 1. Configuramos para ignorar se a API manda minúsculo (name) e a gente usa Maiúsculo (Name)
-            var opcoesJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
-            // 2. Deserializamos a string bagunçada para o nosso DTO!
-            RawgResponseDto dadosApi = JsonSerializer.Deserialize<RawgResponseDto>(jsonString, opcoesJson) ?? new RawgResponseDto();
-
-            // 3. A FASE DE TRADUÇÃO (Mapeamento)
-            List<Jogo> bancoDeJogosLimpo = new List<Jogo>();
-
-            foreach (var jogoSujo in dadosApi.Results)
-            {
-                // A) Limpando a data (De "2015-05-18" para 2015)
-                int anoTraduzido = 0;
-                if (!string.IsNullOrEmpty(jogoSujo.Released) && jogoSujo.Released.Length >= 4)
+                if (string.IsNullOrEmpty(token))
                 {
-                    int.TryParse(jogoSujo.Released.Substring(0, 4), out anoTraduzido);
+                    throw new Exception("Não foi possível gerar o Token da Twitch.");
                 }
 
-                // B) Extraindo os textos das listas de objetos
-                List<string> generosLimpos = jogoSujo.Genres.Select(g => g.Name).ToList();
-                List<string> tagsLimpas = jogoSujo.Tags.Select(t => t.Name).ToList();
+                Console.WriteLine("Conectando aos servidores da IGDB...");
 
-                // C) Criando a nossa classe final imaculada
-                Jogo jogoLimpo = new Jogo
+                // 2. Preparamos a requisição POST para a IGDB
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.igdb.com/v4/games");
+                
+                // Colocamos o Client-ID e o Token (Bearer) no cabeçalho (Header) como a IGDB exige
+                request.Headers.Add("Client-ID", clientId);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                // 3. O "Corpo" do texto: A linguagem da IGDB! 
+                // Pedimos o nome, a data, e que ele 'expanda' os IDs de gêneros e temas para nos dar os nomes.
+                string query = "fields name, first_release_date, genres.name, themes.name; limit 100;";
+                request.Content = new StringContent(query, Encoding.UTF8, "text/plain");
+
+                // 4. Enviamos e lemos a resposta
+                var resposta = await carteiro.SendAsync(request);
+                resposta.EnsureSuccessStatusCode();
+
+                string jsonString = await resposta.Content.ReadAsStringAsync();
+
+                // 5. A FASE DE TRADUÇÃO DTO -> JOGO
+                var opcoesJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var dadosApi = JsonSerializer.Deserialize<List<IgdbGameDto>>(jsonString, opcoesJson) ?? new List<IgdbGameDto>();
+
+                List<Jogo> bancoDeJogosLimpo = new List<Jogo>();
+
+                foreach (var jogoSujo in dadosApi)
                 {
-                    Nome = jogoSujo.Name,
-                    Ano = anoTraduzido,
-                    Generos = generosLimpos,
-                    // Vamos usar as Tags da API para popular nossos Temas e Estilos (já que a RAWG mistura tudo)
-                    Temas = tagsLimpas.Take(3).ToList(), // Pega as 3 primeiras tags
-                    EstilosVisuais = tagsLimpas.Skip(3).Take(2).ToList() // Pega a 4ª e 5ª tag
-                };
+                    // Convertendo a data maluca da IGDB (Unix Timestamp) para um Ano normal
+                    int anoTraduzido = 0;
+                    if (jogoSujo.first_release_date.HasValue)
+                    {
+                        // Magia de veterano: Converte os segundos desde 1970 para um objeto DateTime do C#
+                        DateTimeOffset dataDateTime = DateTimeOffset.FromUnixTimeSeconds(jogoSujo.first_release_date.Value);
+                        anoTraduzido = dataDateTime.Year;
+                    }
 
-                bancoDeJogosLimpo.Add(jogoLimpo);
+                    // Prevenindo nulls se o jogo não tiver gênero ou tema cadastrado
+                    var generosSujos = jogoSujo.genres ?? new List<IgdbItemDto>();
+                    var temasSujos = jogoSujo.themes ?? new List<IgdbItemDto>();
+
+                    Jogo jogoLimpo = new Jogo
+                    {
+                        Nome = jogoSujo.name,
+                        Ano = anoTraduzido,
+                        Generos = generosSujos.Select(g => g.name).ToList(),
+                        // O Estilo Visual não tem uma categoria clara na IGDB (é misturado em Temas), 
+                        // então deixamos vazio ou podemos pegar os Temas também. Vamos jogar tudo em Temas por enquanto.
+                        Temas = temasSujos.Select(t => t.name).ToList(),
+                        EstilosVisuais = new List<string>() 
+                    };
+
+                    bancoDeJogosLimpo.Add(jogoLimpo);
+                }
+
+                return bancoDeJogosLimpo;
             }
-
-            return bancoDeJogosLimpo;
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Erro na API: {ex.Message}");
+                Console.WriteLine("Por favor, verifique suas chaves da Twitch e sua conexão.");
+                return new List<Jogo>();
+            }
         }
     }
 }

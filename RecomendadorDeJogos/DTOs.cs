@@ -2,30 +2,29 @@ using System.Collections.Generic;
 
 namespace RecomendadorDeJogos
 {
-    // 1. A API devolve um objeto principal que contém uma lista chamada "results"
-    public class RawgResponseDto
+    // A IGDB não manda aquele "results:" em volta. Ela manda a lista de jogos direto!
+    
+    public class IgdbGameDto
     {
-        public List<RawgGameDto> Results { get; set; } = new List<RawgGameDto>();
+        public string name { get; set; } = string.Empty;
+        
+        // A data vem em formato numérico (Unix Timestamp)
+        public long? first_release_date { get; set; } 
+        
+        public List<IgdbItemDto> genres { get; set; } = new List<IgdbItemDto>();
+        public List<IgdbItemDto> themes { get; set; } = new List<IgdbItemDto>();
     }
 
-    // 2. Cada jogo dentro de "results" vem nesse formato
-    public class RawgGameDto
+    // A IGDB usa o mesmo formato para Gêneros e Temas
+    public class IgdbItemDto
     {
-        public string Name { get; set; } = string.Empty;
-        public string Released { get; set; } = string.Empty; // O ano vem misturado: "2015-05-18"
-        public List<RawgGenreDto> Genres { get; set; } = new List<RawgGenreDto>();
-        public List<RawgTagDto> Tags { get; set; } = new List<RawgTagDto>();
+        public string name { get; set; } = string.Empty;
     }
 
-    // 3. Os gêneros não são textos simples, são objetos com "id" e "name"
-    public class RawgGenreDto
+    // Classe para receber o Token da Twitch
+    public class TwitchTokenDto
     {
-        public string Name { get; set; } = string.Empty;
-    }
-
-    // 4. As tags também são objetos
-    public class RawgTagDto
-    {
-        public string Name { get; set; } = string.Empty;
+        public string access_token { get; set; } = string.Empty;
+        public int expires_in { get; set; }
     }
 }

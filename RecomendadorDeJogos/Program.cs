@@ -24,7 +24,7 @@ namespace RecomendadorDeJogos
             }
             Console.WriteLine($"Sucesso! {bancoDeJogos.Count} jogos carregados.\n");
 
-            Console.WriteLine("=== BEM-VINDO AO RECOMENDADOR DE JOGOS V7 (Arquitetura Limpa) ===");
+            Console.WriteLine("=== BEM-VINDO AO RECOMENDADOR DE JOGOS===");
             List<Jogo> jogosEscolhidos = new List<Jogo>();
 
             while (jogosEscolhidos.Count < 5)
@@ -35,7 +35,7 @@ namespace RecomendadorDeJogos
                 if (string.IsNullOrWhiteSpace(inputUsuario))
                 {
                     if (jogosEscolhidos.Count >= 1) break;
-                    Console.WriteLine("Veterano avisa: Digite pelo menos 1 jogo!");
+                    Console.WriteLine("Aviso: Digite pelo menos 1 jogo!");
                     continue;
                 }
 
