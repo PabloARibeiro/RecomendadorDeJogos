@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace RecomendadorDeJogos
 {
     // A IGDB não manda aquele "results:" em volta. Ela manda a lista de jogos direto!
@@ -26,5 +24,11 @@ namespace RecomendadorDeJogos
     {
         public string access_token { get; set; } = string.Empty;
         public int expires_in { get; set; }
+    }
+
+    public class ChavesDto
+    {
+        public string ClientId { get; set; } = string.Empty;
+        public string ClientSecret { get; set; } = string.Empty;
     }
 }

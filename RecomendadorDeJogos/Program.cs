@@ -1,59 +1,70 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-
-namespace RecomendadorDeJogos
+﻿namespace RecomendadorDeJogos
 {
     class Program
     {
-        // 1. Mudamos de 'void Main' para 'async Task Main'
         static async Task Main(string[] args)
         {
-            Console.WriteLine("=== INICIANDO SISTEMA ===");
+            Console.WriteLine("=== BEM-VINDO AO RECOMENDADOR DE JOGOS V8 (Busca Dinâmica IGDB) ===");
             
             RepositorioJogos repo = new RepositorioJogos();
-            
-            // 2. Colocamos o 'await' antes de chamar a função
-            List<Jogo> bancoDeJogos = await repo.CarregarJogosApi();
-
-            if (bancoDeJogos.Count == 0)
-            {
-                Console.WriteLine("Sem dados para trabalhar. Encerrando.");
-                return;
-            }
-            Console.WriteLine($"Sucesso! {bancoDeJogos.Count} jogos carregados.\n");
-
-            Console.WriteLine("=== BEM-VINDO AO RECOMENDADOR DE JOGOS===");
             List<Jogo> jogosEscolhidos = new List<Jogo>();
 
             while (jogosEscolhidos.Count < 5)
             {
-                Console.Write($"Jogo {jogosEscolhidos.Count + 1}/5 (ou Enter para pular): ");
+                Console.Write($"\nDigite o nome do Jogo {jogosEscolhidos.Count + 1}/5 (ou Enter para pular): ");
                 string inputUsuario = Console.ReadLine() ?? string.Empty;
 
                 if (string.IsNullOrWhiteSpace(inputUsuario))
                 {
                     if (jogosEscolhidos.Count >= 1) break;
-                    Console.WriteLine("Aviso: Digite pelo menos 1 jogo!");
+                    Console.WriteLine("Veterano avisa: Digite pelo menos 1 jogo!");
                     continue;
                 }
 
-                Jogo? jogoEncontrado = bancoDeJogos.FirstOrDefault(j => j.Nome.Equals(inputUsuario, StringComparison.OrdinalIgnoreCase));
+                Console.WriteLine("Pesquisando na Twitch/IGDB...");
+                
+                // Agora o programa faz uma viagem à internet para buscar EXATAMENTE o que o usuário digitou
+                List<Jogo> resultadosBusca = await repo.BuscarJogoPorNome(inputUsuario);
 
-                if (jogoEncontrado != null)
+                if (resultadosBusca.Count == 0)
                 {
-                    if (!jogosEscolhidos.Contains(jogoEncontrado))
-                    {
-                        jogosEscolhidos.Add(jogoEncontrado);
-                        Console.WriteLine($"[+] '{jogoEncontrado.Nome}' adicionado!");
-                    }
-                    else Console.WriteLine("Você já adicionou esse jogo!");
+                    Console.WriteLine("[-] Nenhum jogo encontrado com esse nome. Tente novamente.");
+                    continue;
                 }
-                else Console.WriteLine("[-] Jogo não encontrado no Banco.");
+
+                // Se achou, mostramos as opções para o usuário confirmar
+                Console.WriteLine("Encontramos estes resultados. Qual deles é o seu?");
+                for (int i = 0; i < resultadosBusca.Count; i++)
+                {
+                    Console.WriteLine($"[{i + 1}] {resultadosBusca[i].Nome} ({resultadosBusca[i].Ano})");
+                }
+                Console.WriteLine("[0] Nenhum desses (Cancelar)");
+
+                Console.Write("Escolha um número: ");
+                string escolhaStr = Console.ReadLine() ?? string.Empty;
+
+                if (int.TryParse(escolhaStr, out int escolhaIndex) && escolhaIndex > 0 && escolhaIndex <= resultadosBusca.Count)
+                {
+                    Jogo jogoSelecionado = resultadosBusca[escolhaIndex - 1];
+
+                    // Verifica se já não tinha adicionado
+                    if (!jogosEscolhidos.Any(j => j.Nome == jogoSelecionado.Nome))
+                    {
+                        jogosEscolhidos.Add(jogoSelecionado);
+                        Console.WriteLine($"[+] '{jogoSelecionado.Nome}' adicionado à sua lista!");
+                    }
+                    else
+                    {
+                        Console.WriteLine("[-] Você já adicionou esse jogo à lista!");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Busca cancelada. Vamos tentar outro.");
+                }
             }
 
-            Console.WriteLine("\n=== FILTROS ===");
+            Console.WriteLine("\n=== FILTROS DE RECOMENDAÇÃO ===");
             Console.Write("Gênero a excluir (Enter para pular): ");
             string generoExcluido = Console.ReadLine() ?? string.Empty;
 
@@ -67,23 +78,43 @@ namespace RecomendadorDeJogos
 
             Console.WriteLine("\n=== CALCULANDO RECOMENDAÇÕES ===");
 
-            // 2. Instanciamos nosso Motor e passamos a bola para ele!
-            MotorRecomendacao motor = new MotorRecomendacao();
-            List<Recomendacao> resultados = motor.Gerar(bancoDeJogos, jogosEscolhidos, generoExcluido, anoMin, anoMax);
+            /* * ATENÇÃO AQUI: Como não baixamos o banco inteiro, precisamos buscar 
+             * na API jogos semelhantes. Por hora, como já estouramos o limite de
+             * arquitetura, o seu Motor.cs exigiria que a gente fizesse uma NOVA consulta
+             * na API pedindo recomendações, e não cruzando dados locais.
+             */
+            
+            Console.WriteLine("\n=== BUSCANDO CATÁLOGO DE CANDIDATOS NA NUVEM ===");
+            // 1. Pedimos pro Repositório trazer os 100 melhores jogos da API
+            List<Jogo> bancoCandidatos = await repo.BuscarCatalogoParaRecomendacao(anoMin, anoMax);
 
-            // 3. Exibimos o resultado
-            if (resultados.Count == 0)
+            if (bancoCandidatos.Count == 0)
             {
-                Console.WriteLine("Com esses filtros, não achamos nada :(");
+                Console.WriteLine("Não conseguimos buscar o catálogo na internet. Tente novamente mais tarde.");
+                return;
+            }
+
+            Console.WriteLine($"[+] {bancoCandidatos.Count} jogos de alto nível recebidos da IGDB.");
+            Console.WriteLine("\n=== CALCULANDO RECOMENDAÇÕES ===");
+
+            // 2. A Mágica da Arquitetura: O nosso velho motor processa os dados novos!
+            MotorRecomendacao motor = new MotorRecomendacao();
+            List<Recomendacao> resultados = motor.Gerar(bancoCandidatos, jogosEscolhidos, generoExcluido, anoMin, anoMax);
+
+            // Exibimos os top 5 resultados para o usuário não ser inundado de texto
+            var topResultados = resultados.Take(5).ToList();
+
+            if (topResultados.Count == 0)
+            {
+                Console.WriteLine("Com os seus jogos e filtros, nosso motor não encontrou nada compatível neste catálogo :(");
             }
             else
             {
-                foreach (var rec in resultados)
+                foreach (var rec in topResultados)
                 {
                     Console.WriteLine($"\n> {rec.Item.Nome} ({rec.Item.Ano}) (Match: {rec.Pontos} pontos)");
                     if(rec.MatchesGen.Any()) Console.WriteLine($"  [Gêneros em comum]: {string.Join(", ", rec.MatchesGen)}");
                     if(rec.MatchesTema.Any()) Console.WriteLine($"  [Temas em comum]: {string.Join(", ", rec.MatchesTema)}");
-                    if(rec.MatchesEst.Any()) Console.WriteLine($"  [Estilo visual em comum]: {string.Join(", ", rec.MatchesEst)}");
                 }
             }
             

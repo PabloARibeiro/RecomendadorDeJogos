@@ -1,114 +1,187 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace RecomendadorDeJogos
 {
     public class RepositorioJogos
     {
         private static readonly HttpClient carteiro = new HttpClient();
+        
+        // As variáveis agora começam vazias
+        private readonly string clientId = string.Empty;
+        private readonly string clientSecret = string.Empty;
+        private string tokenAtual = string.Empty;
 
-        // COLOQUE SUAS CHAVES AQUI
-        private readonly string clientId = "enov2qvpa3xxzib82yx9uonm0dk6jf";
-        private readonly string clientSecret = "qfb0wehulhc77hc85n9incw7oyywc2";
-
-        // Função 1: Pegar o Crachá (Token) na Twitch
-        private async Task<string> PegarTokenTwitch()
+        // NOVO: O Construtor lê o arquivo json localmente e preenche as variáveis
+        public RepositorioJogos()
         {
-            Console.WriteLine("Pedindo autorização para a Twitch...");
-            
-            // Requisição POST para a Twitch
+            try
+            {
+                string jsonString = System.IO.File.ReadAllText("keys.json");
+                var chaves = JsonSerializer.Deserialize<ChavesDto>(jsonString);
+                
+                if (chaves != null)
+                {
+                    clientId = chaves.ClientId;
+                    clientSecret = chaves.ClientSecret;
+                }
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("[Aviso do Sistema] Arquivo 'keys.json' não encontrado. A API pode falhar.");
+            }
+        }
+
+        private async Task GarantirToken()
+        {
+            if (!string.IsNullOrEmpty(tokenAtual)) return;
+
+            Console.WriteLine("[Sistema] Negociando acesso com a Twitch...");
             var request = new HttpRequestMessage(HttpMethod.Post, 
                 $"https://id.twitch.tv/oauth2/token?client_id={clientId}&client_secret={clientSecret}&grant_type=client_credentials");
 
             var resposta = await carteiro.SendAsync(request);
-            resposta.EnsureSuccessStatusCode();
+            
+            // TRUQUE DE VETERANO: Lemos o erro exato da Twitch se algo falhar!
+            if (!resposta.IsSuccessStatusCode)
+            {
+                string erroTwitch = await resposta.Content.ReadAsStringAsync();
+                throw new Exception($"Erro na Twitch ({resposta.StatusCode}): {erroTwitch}");
+            }
 
             string jsonString = await resposta.Content.ReadAsStringAsync();
             var tokenData = JsonSerializer.Deserialize<TwitchTokenDto>(jsonString);
-
-            return tokenData?.access_token ?? string.Empty;
+            tokenAtual = tokenData?.access_token ?? string.Empty;
         }
 
-        // Função 2: A nossa função principal que o Program.cs vai chamar
-        public async Task<List<Jogo>> CarregarJogosApi()
+        public async Task<List<Jogo>> BuscarJogoPorNome(string nomePesquisa)
         {
             try
             {
-                // 1. Pegamos o token
-                string token = await PegarTokenTwitch();
+                await GarantirToken();
 
-                if (string.IsNullOrEmpty(token))
-                {
-                    throw new Exception("Não foi possível gerar o Token da Twitch.");
-                }
-
-                Console.WriteLine("Conectando aos servidores da IGDB...");
-
-                // 2. Preparamos a requisição POST para a IGDB
                 var request = new HttpRequestMessage(HttpMethod.Post, "https://api.igdb.com/v4/games");
-                
-                // Colocamos o Client-ID e o Token (Bearer) no cabeçalho (Header) como a IGDB exige
                 request.Headers.Add("Client-ID", clientId);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenAtual);
 
-                // 3. O "Corpo" do texto: A linguagem da IGDB! 
-                // Pedimos o nome, a data, e que ele 'expanda' os IDs de gêneros e temas para nos dar os nomes.
-                string query = "fields name, first_release_date, genres.name, themes.name; limit 100;";
+                string query = $"search \"{nomePesquisa}\"; fields name, first_release_date, genres.name, themes.name; limit 5;";
                 request.Content = new StringContent(query, Encoding.UTF8, "text/plain");
 
-                // 4. Enviamos e lemos a resposta
+                var resposta = await carteiro.SendAsync(request);
+
+                // TRUQUE DE VETERANO: Lemos o erro exato da IGDB se algo falhar!
+                if (!resposta.IsSuccessStatusCode)
+                {
+                    string erroIgdb = await resposta.Content.ReadAsStringAsync();
+                    throw new Exception($"Erro na IGDB ({resposta.StatusCode}): {erroIgdb}\nA Query enviada foi: {query}");
+                }
+
+                string jsonString = await resposta.Content.ReadAsStringAsync();
+
+                var opcoesJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var dadosApi = JsonSerializer.Deserialize<List<IgdbGameDto>>(jsonString, opcoesJson) ?? new List<IgdbGameDto>();
+
+                List<Jogo> resultadosLimpos = new List<Jogo>();
+
+                foreach (var jogoSujo in dadosApi)
+                {
+                    int anoTraduzido = 0;
+                    if (jogoSujo.first_release_date.HasValue)
+                    {
+                        DateTimeOffset dataDateTime = DateTimeOffset.FromUnixTimeSeconds(jogoSujo.first_release_date.Value);
+                        anoTraduzido = dataDateTime.Year;
+                    }
+
+                    var generosSujos = jogoSujo.genres ?? new List<IgdbItemDto>();
+                    var temasSujos = jogoSujo.themes ?? new List<IgdbItemDto>();
+
+                    resultadosLimpos.Add(new Jogo
+                    {
+                        Nome = jogoSujo.name,
+                        Ano = anoTraduzido,
+                        Generos = generosSujos.Select(g => g.name).ToList(),
+                        Temas = temasSujos.Select(t => t.name).ToList(),
+                        EstilosVisuais = new List<string>()
+                    });
+                }
+
+                return resultadosLimpos;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\n[Detalhes do Erro] {ex.Message}");
+                return new List<Jogo>();
+            }
+        }
+
+        public async Task<List<Jogo>> BuscarCatalogoParaRecomendacao(int? anoMin, int? anoMax)
+        {
+            try
+            {
+                await GarantirToken();
+
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.igdb.com/v4/games");
+                request.Headers.Add("Client-ID", clientId);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenAtual);
+
+                // Vamos montar uma query inteligente. 
+                // Pedimos jogos com mais de 50 avaliações para garantir que são jogos relevantes.
+                string queryAnos = "";
+                
+                // Se o usuário já pediu um filtro de anos, a gente avisa a IGDB para não gastar internet baixando jogos velhos
+                if (anoMin.HasValue) 
+                {
+                    long minUnix = new DateTimeOffset(new DateTime(anoMin.Value, 1, 1)).ToUnixTimeSeconds();
+                    queryAnos += $" & first_release_date >= {minUnix}";
+                }
+                if (anoMax.HasValue) 
+                {
+                    long maxUnix = new DateTimeOffset(new DateTime(anoMax.Value, 12, 31)).ToUnixTimeSeconds();
+                    queryAnos += $" & first_release_date <= {maxUnix}";
+                }
+
+                // Trazemos os 100 jogos mais bem avaliados que se encaixam no filtro de tempo!
+                string query = $"fields name, first_release_date, genres.name, themes.name; where rating_count > 50 {queryAnos}; sort rating desc; limit 100;";
+                
+                request.Content = new StringContent(query, Encoding.UTF8, "text/plain");
+
                 var resposta = await carteiro.SendAsync(request);
                 resposta.EnsureSuccessStatusCode();
 
                 string jsonString = await resposta.Content.ReadAsStringAsync();
 
-                // 5. A FASE DE TRADUÇÃO DTO -> JOGO
                 var opcoesJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var dadosApi = JsonSerializer.Deserialize<List<IgdbGameDto>>(jsonString, opcoesJson) ?? new List<IgdbGameDto>();
 
-                List<Jogo> bancoDeJogosLimpo = new List<Jogo>();
-
+                // Reutilizamos a nossa exata lógica de tradução
+                List<Jogo> catalogoLimpo = new List<Jogo>();
                 foreach (var jogoSujo in dadosApi)
                 {
-                    // Convertendo a data maluca da IGDB (Unix Timestamp) para um Ano normal
                     int anoTraduzido = 0;
                     if (jogoSujo.first_release_date.HasValue)
                     {
-                        // Magia de veterano: Converte os segundos desde 1970 para um objeto DateTime do C#
-                        DateTimeOffset dataDateTime = DateTimeOffset.FromUnixTimeSeconds(jogoSujo.first_release_date.Value);
-                        anoTraduzido = dataDateTime.Year;
+                        anoTraduzido = DateTimeOffset.FromUnixTimeSeconds(jogoSujo.first_release_date.Value).Year;
                     }
 
-                    // Prevenindo nulls se o jogo não tiver gênero ou tema cadastrado
                     var generosSujos = jogoSujo.genres ?? new List<IgdbItemDto>();
                     var temasSujos = jogoSujo.themes ?? new List<IgdbItemDto>();
 
-                    Jogo jogoLimpo = new Jogo
+                    catalogoLimpo.Add(new Jogo
                     {
                         Nome = jogoSujo.name,
                         Ano = anoTraduzido,
                         Generos = generosSujos.Select(g => g.name).ToList(),
-                        // O Estilo Visual não tem uma categoria clara na IGDB (é misturado em Temas), 
-                        // então deixamos vazio ou podemos pegar os Temas também. Vamos jogar tudo em Temas por enquanto.
                         Temas = temasSujos.Select(t => t.name).ToList(),
-                        EstilosVisuais = new List<string>() 
-                    };
-
-                    bancoDeJogosLimpo.Add(jogoLimpo);
+                        EstilosVisuais = new List<string>()
+                    });
                 }
 
-                return bancoDeJogosLimpo;
+                return catalogoLimpo;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Erro na API: {ex.Message}");
-                Console.WriteLine("Por favor, verifique suas chaves da Twitch e sua conexão.");
+                Console.WriteLine($"\n[Erro ao buscar catálogo] {ex.Message}");
                 return new List<Jogo>();
             }
         }
