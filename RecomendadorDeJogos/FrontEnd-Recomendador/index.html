@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recomendador de Jogos</title>
+    <style>
+        /* CSS BÁSICO - Um tema escuro com cara de app de jogos */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; margin: 0; padding: 20px; }
+        h1, h2 { color: #bb86fc; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        /* Layouts de Grade (Grid) */
+        .secao { background-color: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .grid-jogos { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; margin-top: 15px; }
+        
+        /* O "Card" de cada jogo */
+        .card-jogo { background-color: #2d2d2d; border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .card-jogo:hover { transform: scale(1.05); background-color: #3d3d3d; }
+        .capa { width: 100%; height: 200px; object-fit: cover; border-radius: 4px; background-color: #000; }
+        .nome-jogo { font-weight: bold; margin: 10px 0 5px 0; font-size: 14px; }
+        .ano-jogo { font-size: 12px; color: #aaaaaa; }
+        
+        /* Botões e Inputs */
+        input[type="text"], input[type="number"] { padding: 10px; border-radius: 4px; border: 1px solid #333; background: #2d2d2d; color: white; margin-right: 10px; width: 200px; }
+        button { background-color: #bb86fc; color: #000; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button:hover { background-color: #9965f4; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        
+        /* Filtros */
+        .filtros { display: flex; gap: 10px; margin-top: 10px; }
+        .badge { background: #03dac6; color: #000; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin: 2px; display: inline-block; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎮 Recomendador de Jogos</h1>
+
+    <div class="secao">
+        <h2>Adicionar Jogos (Base)</h2>
+        <input type="text" id="inputBusca" placeholder="Digite o nome de um jogo...">
+        <button id="btnBuscar" onclick="buscarJogo()">Buscar na IGDB</button>
+        <p id="msgBusca" style="color: #ffb74d; font-size: 14px;"></p>
+        
+        <div id="resultadosBusca" class="grid-jogos"></div>
+    </div>
+
+    <div class="secao">
+        <h2>Seus Jogos Escolhidos (<span id="contador">0</span>/5)</h2>
+        <div id="listaEscolhidos" class="grid-jogos"></div>
+
+        <h3 style="margin-top: 30px;">Filtros (Opcional)</h3>
+        <div class="filtros">
+            <input type="text" id="filtroGenero" placeholder="Gênero a excluir (Ex: RPG)">
+            <input type="number" id="filtroAnoMin" placeholder="Ano Mínimo">
+            <input type="number" id="filtroAnoMax" placeholder="Ano Máximo">
+        </div>
+        
+        <br>
+        <button id="btnRecomendar" onclick="gerarRecomendacoes()" disabled>Gerar Recomendações 🚀</button>
+    </div>
+
+    <div class="secao" id="secaoRecomendacoes" style="display: none;">
+        <h2>🌟 Recomendações Perfeitas para Você</h2>
+        <div id="resultadosRecomendacao" class="grid-jogos"></div>
+    </div>
+
+</div>
+
+<script>
+    // URL da sua API em C#. MUDE A PORTA (5000, 5161, etc) DE ACORDO COM O SEU TERMINAL!
+    const API_BASE_URL = "http://localhost:5000/api"; 
+    
+    // Lista que guarda os jogos que o usuário clicou
+    let jogosEscolhidos = [];
+
+    // Função 1: Bater na API para buscar jogos
+    async function buscarJogo() {
+        const input = document.getElementById("inputBusca").value;
+        const msg = document.getElementById("msgBusca");
+        const divResultados = document.getElementById("resultadosBusca");
+        
+        if (!input) return;
+
+        msg.innerText = "Pesquisando na IGDB...";
+        divResultados.innerHTML = ""; // Limpa a busca anterior
+
+        try {
+            // O JavaScript vai lá na sua API C# pedir os dados
+            const resposta = await fetch(`${API_BASE_URL}/buscar?nome=${input}`);
+            if (!resposta.ok) throw new Error("Erro na busca");
+            
+            const jogos = await resposta.json();
+            msg.innerText = jogos.length === 0 ? "Nenhum jogo encontrado." : "";
+
+            // Para cada jogo encontrado, a gente "desenha" um card na tela
+            jogos.forEach(jogo => {
+                const img = jogo.imagemUrl ? jogo.imagemUrl : 'https://via.placeholder.com/180x200?text=Sem+Capa';
+                
+                const card = document.createElement("div");
+                card.className = "card-jogo";
+                card.innerHTML = `
+                    <img src="${img}" class="capa" alt="Capa">
+                    <div class="nome-jogo">${jogo.nome}</div>
+                    <div class="ano-jogo">${jogo.ano > 0 ? jogo.ano : '?'}</div>
+                `;
+                
+                // Se clicar no card, adiciona na lista
+                card.onclick = () => adicionarJogo(jogo);
+                divResultados.appendChild(card);
+            });
+        } catch (erro) {
+            msg.innerText = "Erro ao conectar com a sua API C#. O servidor está rodando?";
+            console.error(erro);
+        }
+    }
+
+    // Função 2: Adicionar na lista visual do usuário
+    function adicionarJogo(jogo) {
+        if (jogosEscolhidos.length >= 5) {
+            alert("Veterano avisa: Você já atingiu o limite de 5 jogos!");
+            return;
+        }
+        if (jogosEscolhidos.find(j => j.nome === jogo.nome)) {
+            alert("Você já escolheu esse jogo!");
+            return;
+        }
+
+        jogosEscolhidos.push(jogo);
+        atualizarTelaEscolhidos();
+        document.getElementById("resultadosBusca").innerHTML = ""; // Limpa a busca
+        document.getElementById("inputBusca").value = "";
+    }
+
+    // Função 3: Atualiza a interface
+    function atualizarTelaEscolhidos() {
+        const divLista = document.getElementById("listaEscolhidos");
+        divLista.innerHTML = "";
+        document.getElementById("contador").innerText = jogosEscolhidos.length;
+        
+        // Habilita o botão de recomendar se tiver pelo menos 1 jogo
+        document.getElementById("btnRecomendar").disabled = jogosEscolhidos.length === 0;
+
+        jogosEscolhidos.forEach((jogo, index) => {
+            const img = jogo.imagemUrl ? jogo.imagemUrl : 'https://via.placeholder.com/180x200?text=Sem+Capa';
+            const card = document.createElement("div");
+            card.className = "card-jogo";
+            card.innerHTML = `
+                <img src="${img}" class="capa" alt="Capa">
+                <div class="nome-jogo">${jogo.nome}</div>
+                <div style="color: #ff5252; font-size: 12px; margin-top: 5px;">[Clique para remover]</div>
+            `;
+            // Se clicar no card escolhido, remove da lista
+            card.onclick = () => {
+                jogosEscolhidos.splice(index, 1);
+                atualizarTelaEscolhidos();
+            };
+            divLista.appendChild(card);
+        });
+    }
+
+    // Função 4: A Mágica! Mandar tudo pro C# calcular
+    async function gerarRecomendacoes() {
+        const btn = document.getElementById("btnRecomendar");
+        btn.innerText = "Calculando com o Motor... ⏳";
+        btn.disabled = true;
+
+        // Pegamos os valores dos filtros
+        const genExcluido = document.getElementById("filtroGenero").value;
+        const anoMin = document.getElementById("filtroAnoMin").value;
+        const anoMax = document.getElementById("filtroAnoMax").value;
+
+        // Montamos o "pacote" que o seu C# está esperando receber no POST
+        const payload = {
+            jogosEscolhidos: jogosEscolhidos,
+            generoExcluido: genExcluido ? genExcluido : null,
+            anoMin: anoMin ? parseInt(anoMin) : null,
+            anoMax: anoMax ? parseInt(anoMax) : null
+        };
+
+        try {
+            // Mandamos um POST para a nossa API
+            const resposta = await fetch(`${API_BASE_URL}/recomendar`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resposta.ok) throw new Error("Erro ao gerar recomendações");
+            
+            const resultados = await resposta.json();
+            desenharRecomendacoes(resultados);
+
+        } catch (erro) {
+            alert("Erro ao calcular recomendações!");
+            console.error(erro);
+        } finally {
+            btn.innerText = "Gerar Recomendações 🚀";
+            btn.disabled = false;
+        }
+    }
+
+    // Função 5: Desenhar as recomendações na tela com os motivos
+    function desenharRecomendacoes(resultados) {
+        document.getElementById("secaoRecomendacoes").style.display = "block";
+        const divRes = document.getElementById("resultadosRecomendacao");
+        divRes.innerHTML = "";
+
+        if (resultados.length === 0) {
+            divRes.innerHTML = "<p>Nenhum jogo bateu com seus filtros :(</p>";
+            return;
+        }
+
+        resultados.forEach(rec => {
+            const jogo = rec.item;
+            const img = jogo.imagemUrl ? jogo.imagemUrl : 'https://via.placeholder.com/180x200?text=Sem+Capa';
+            
+            // Criando as badgazinhas de motivos (explicabilidade)
+            let motivosHTML = "";
+            if (rec.matchesGen && rec.matchesGen.length > 0) {
+                rec.matchesGen.forEach(g => motivosHTML += `<span class="badge">${g}</span>`);
+            }
+            if (rec.matchesTema && rec.matchesTema.length > 0) {
+                rec.matchesTema.forEach(t => motivosHTML += `<span class="badge" style="background:#ffb74d;">${t}</span>`);
+            }
+
+            const card = document.createElement("div");
+            card.className = "card-jogo";
+            card.style.cursor = "default"; // Tira a mãozinha do mouse
+            card.innerHTML = `
+                <img src="${img}" class="capa" alt="Capa">
+                <div class="nome-jogo">${jogo.nome}</div>
+                <div class="ano-jogo">${jogo.ano > 0 ? jogo.ano : '?'}</div>
+                <div style="font-size: 11px; margin-top: 10px; color: #bb86fc;">Match: ${rec.pontos} pts</div>
+                <div style="margin-top: 5px;">${motivosHTML}</div>
+            `;
+            divRes.appendChild(card);
+        });
+        
+        // Rola a tela para baixo suavemente para o usuário ver os resultados
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+</script>
+
+</body>
+</html>

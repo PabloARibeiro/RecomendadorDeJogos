@@ -7,6 +7,7 @@ namespace RecomendadorDeJogos
         public List<string> Generos { get; set; } = new List<string>();
         public List<string> Temas { get; set; } = new List<string>();
         public List<string> EstilosVisuais { get; set; } = new List<string>();
+        public string ImagemUrl { get; set; } = string.Empty;
     }
 
     // NOVA CLASSE: Para transportar o resultado do Motor para a Tela

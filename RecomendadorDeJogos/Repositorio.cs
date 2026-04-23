@@ -64,7 +64,7 @@ namespace RecomendadorDeJogos
                 request.Headers.Add("Client-ID", clientId);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenAtual);
 
-                string query = $"search \"{nomePesquisa}\"; fields name, first_release_date, genres.name, themes.name; limit 5;";
+                string query = $"search \"{nomePesquisa}\"; fields name, first_release_date, genres.name, themes.name, cover.url; limit 5;";
                 request.Content = new StringContent(query, Encoding.UTF8, "text/plain");
 
                 var resposta = await carteiro.SendAsync(request);
@@ -101,7 +101,8 @@ namespace RecomendadorDeJogos
                         Ano = anoTraduzido,
                         Generos = generosSujos.Select(g => g.name).ToList(),
                         Temas = temasSujos.Select(t => t.name).ToList(),
-                        EstilosVisuais = new List<string>()
+                        EstilosVisuais = new List<string>(),
+                        ImagemUrl = jogoSujo.cover != null ? "https:" + jogoSujo.cover.url.Replace("t_thumb", "t_cover_big") : ""
                     });
                 }
 
@@ -141,7 +142,7 @@ namespace RecomendadorDeJogos
                 }
 
                 // Trazemos os 100 jogos mais bem avaliados que se encaixam no filtro de tempo!
-                string query = $"fields name, first_release_date, genres.name, themes.name; where rating_count > 50 {queryAnos}; sort rating desc; limit 100;";
+                string query = $"fields name, first_release_date, genres.name, themes.name, cover.url; where rating_count > 50 {queryAnos}; sort rating desc; limit 100;";
                 
                 request.Content = new StringContent(query, Encoding.UTF8, "text/plain");
 
